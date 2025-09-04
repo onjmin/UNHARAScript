@@ -5,7 +5,7 @@
 // @description Imgur画像に即座にモザイクをかけ、茶色率が低い画像は自動解除(Lightbox有効)。モザイクが残った画像はクリックで手動解除(Lightbox無効)できます。span要素にも対応しました。
 // @author      ワイ
 // @match       https://*.open2ch.net/*
-// @grant       GM_xmlhttpRequest
+// @grant       none
 // @connect     i.imgur.com
 // @connect     imgur.com
 // @run-at      document-start
@@ -105,77 +105,62 @@
 		element.addEventListener("click", handler, { once: true, capture: true });
 	}
 
-	function getImageDataUrl(url, callback) {
-		GM_xmlhttpRequest({
-			method: "GET",
-			url: url,
-			responseType: "blob",
-			timeout: 10000,
-			onload: (res) => {
-				const reader = new FileReader();
-				reader.onload = () => callback(reader.result);
-				reader.onerror = () => callback(null);
-				reader.readAsDataURL(res.response);
-			},
-			onerror: () => callback(null),
-			ontimeout: () => callback(null),
+	const fetchImage = (url) =>
+		new Promise((resolve) => {
+			const image = new Image();
+			image.onload = () => resolve(image);
+			image.crossOrigin = "anonymous";
+			image.src = url;
 		});
-	}
 
 	// 画像URLの分析とモザイク制御を行う主要ロジック
-	function analyzeAndControlMosaic(element, url) {
+	const analyzeAndControlMosaic = async (element, url) => {
+		const urlObj = (() => {
+			try {
+				return new URL(url);
+			} catch (err) {}
+		})();
+
+		if (!urlObj) return;
+		if (!urlObj.hostname.split(".").slice(-2).join(".") !== "imgur.com") return;
+
 		element.dataset.mosaicState = "processing";
-		getImageDataUrl(url, (dataUrl) => {
-			if (!dataUrl) {
-				element.dataset.mosaicState = "error";
-				return;
+		const image = await fetchImage(url);
+		const canvas = document.createElement("canvas");
+		const ctx = canvas.getContext("2d");
+		canvas.width = image.naturalWidth;
+		canvas.height = image.naturalHeight;
+		ctx.drawImage(image, 0, 0);
+
+		try {
+			const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+			let brownPixelCount = 0;
+			let totalPixels = 0;
+
+			for (let i = 0; i < data.length; i += 4) {
+				const [r, g, b, a] = data.subarray(i, i + 3);
+				const opacity = a / 255;
+				totalPixels++;
+				if (isBrown(r * opacity, g * opacity, b * opacity)) {
+					brownPixelCount++;
+				}
 			}
 
-			const image = new Image();
-			image.onload = () => {
-				const canvas = document.createElement("canvas");
-				const ctx = canvas.getContext("2d");
-				canvas.width = image.naturalWidth;
-				canvas.height = image.naturalHeight;
-				ctx.drawImage(image, 0, 0);
+			const percentage =
+				totalPixels > 0 ? (brownPixelCount / totalPixels) * 100 : 0;
 
-				try {
-					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-					const data = imageData.data;
-					let brownPixelCount = 0;
-					let totalPixels = 0;
-
-					for (let i = 0; i < data.length; i += 4) {
-						if (data[i + 3] < 255) continue;
-						totalPixels++;
-						if (isBrown(data[i], data[i + 1], data[i + 2])) {
-							brownPixelCount++;
-						}
-					}
-
-					const percentage =
-						totalPixels > 0 ? (brownPixelCount / totalPixels) * 100 : 0;
-
-					if (percentage < BROWN_THRESHOLD) {
-						// 【自動解除】モザイクを解除。クリックリスナーは追加しないため、Lightboxは有効
-						element.classList.add("mosaic-removed");
-						element.classList.remove("mosaic-applied");
-						element.dataset.mosaicState = `unmosaiced (${percentage.toFixed(1)}%)`;
-					} else {
-						// 【モザイク維持】手動解除用のクリックリスナーを追加。クリックするとLightboxを無効化
-						element.dataset.mosaicState = `mosaiced (${percentage.toFixed(1)}%)`;
-						addManualUnmosaicListener(element);
-					}
-				} catch (e) {
-					element.dataset.mosaicState = "analysis_error";
-				}
-			};
-			image.onerror = () => {
-				element.dataset.mosaicState = "load_error";
-			};
-			image.src = dataUrl;
-		});
-	}
+			if (percentage < BROWN_THRESHOLD) {
+				// 【自動解除】モザイクを解除。クリックリスナーは追加しないため、Lightboxは有効
+				element.classList.add("mosaic-removed");
+				element.classList.remove("mosaic-applied");
+				element.dataset.mosaicState = `unmosaiced (${percentage.toFixed(1)}%)`;
+			} else {
+				// 【モザイク維持】手動解除用のクリックリスナーを追加。クリックするとLightboxを無効化
+				element.dataset.mosaicState = `mosaiced (${percentage.toFixed(1)}%)`;
+				addManualUnmosaicListener(element);
+			}
+		} catch (e) {}
+	};
 
 	// ノードを種類別に処理
 	function processNode(node) {
