@@ -1,0 +1,19 @@
+{
+  "name": "UNHARAScript",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "volta": {
+    "node": "22.19.0",
+    "pnpm": "10.15.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.2.2"
+  }
+}
