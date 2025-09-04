@@ -11,7 +11,7 @@
 // @run-at      document-start
 // ==/UserScript==
 
-(function () {
+(() => {
 	"use strict";
 
 	// ===============================================
@@ -76,7 +76,7 @@
 	function isImgurImage(url) {
 		try {
 			if (!url) return false;
-			const hostname = new URL(url).hostname;
+			const { hostname } = new URL(url);
 			return IMGUR_DOMAINS.includes(hostname);
 		} catch (e) {
 			return false;
